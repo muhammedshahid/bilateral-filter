@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smooth Pixel</title>
+    <style>
+      /* Gallery Styles */
+      /* #output-container {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 20px;
+        padding: 20px;
+      } */
+
+      div.root-gallery {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 20px;
+        padding: 20px;
+      }
+
+      .image-container {
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        overflow: hidden;
+        text-align: center;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+      }
+
+      .image-title {
+        font-size: 16px;
+        font-weight: bold;
+        padding: 10px;
+        background-color: #f8f8f8;
+        color: #333;
+        border-bottom: 1px solid #ddd;
+      }
+
+      .resized-image {
+        width: 100%; /* Full width of the container */
+        height: auto; /* Maintain aspect ratio */
+        display: block;
+      }
+
+      /* Canvas Styles */
+      #canvas {
+        border: 1px solid #000;
+        margin-top: 20px;
+        max-width: 100%;
+        height: auto;
+      }
+
+      body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+      }
+
+      button {
+        margin-top: 10px;
+        padding: 10px 20px;
+        font-size: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Smoothen the pixel</h1>
+    <input type="file" id="fileInput" accept="image/*" />
+    <div id="output-container"></div>
+
+    <script>
+      const fileInput = document.querySelector('#fileInput')
+
+      // denoising & smoothen pixels
+      // better than gausian blur as it consider edge dist as well as intensity difference in consideration
+      function applyBilateralFilter(imageData, sigmaColor, sigmaSpace) {
+        const width = imageData.width
+        const height = imageData.height
+        const srcData = imageData.data
+        const dstData = new Uint8ClampedArray(srcData.length)
+
+        const halfSpace = Math.floor(sigmaSpace * 2)
+        const colorFactor = -1 / (2 * sigmaColor * sigmaColor)
+        const spaceFactor = -1 / (2 * sigmaSpace * sigmaSpace)
+
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            const idx = (y * width + x) * 4
+
+            let rSum = 0,
+              gSum = 0,
+              bSum = 0
+            let wSum = 0
+
+            for (let dy = -halfSpace; dy <= halfSpace; dy++) {
+              for (let dx = -halfSpace; dx <= halfSpace; dx++) {
+                const nx = x + dx
+                const ny = y + dy
+
+                if (nx >= 0 && ny >= 0 && nx < width && ny < height) {
+                  const nIdx = (ny * width + nx) * 4
+
+                  // Calculate color distance
+                  const dr = srcData[idx] - srcData[nIdx]
+                  const dg = srcData[idx + 1] - srcData[nIdx + 1]
+                  const db = srcData[idx + 2] - srcData[nIdx + 2]
+                  const colorDist = dr * dr + dg * dg + db * db
+
+                  // Calculate spatial distance
+                  const spaceDist = dx * dx + dy * dy
+
+                  // Calculate weights
+                  const colorWeight = Math.exp(colorFactor * colorDist)
+                  const spaceWeight = Math.exp(spaceFactor * spaceDist)
+                  const weight = colorWeight * spaceWeight
+
+                  // Weighted sum
+                  rSum += srcData[nIdx] * weight
+                  gSum += srcData[nIdx + 1] * weight
+                  bSum += srcData[nIdx + 2] * weight
+                  wSum += weight
+                }
+              }
+            }
+
+            dstData[idx] = rSum / wSum
+            dstData[idx + 1] = gSum / wSum
+            dstData[idx + 2] = bSum / wSum
+            dstData[idx + 3] = srcData[idx + 3] // Preserve alpha
+          }
+        }
+
+        // Return new ImageData with smoothed pixels
+        return new ImageData(dstData, width, height)
+      }
+
+      
+      function createGroup(id) {
+        const rootDiv = document.createElement('div')
+        rootDiv.id = `root-${id}`
+        rootDiv.innerHTML = `<button>Smoothify</button><div class='root-gallery'></div>`
+        document.querySelector('#output-container').appendChild(rootDiv)
+        return rootDiv.id
+      }
+      
+      function showCase(rootDivId, dataURL, titleText) {
+        // Create a container div to hold the title and image
+        const container = document.createElement('div')
+        container.classList.add('image-container')
+
+        // Create a title element
+        const title = document.createElement('div')
+        title.classList.add('image-title')
+        title.textContent = titleText
+
+        // Create an image element
+        const img = document.createElement('img')
+        img.src = dataURL
+        img.alt = 'Image'
+        img.classList.add('resized-image')
+
+        // Append the title and image to the container
+        container.appendChild(title)
+        container.appendChild(img)
+
+        // Append the container to the output area
+        const rootDiv = document.getElementById(rootDivId)
+        rootDiv.querySelector('.root-gallery').appendChild(container)
+      }
+
+      function drawImgOnCanvas(img) {
+        const canvas = document.createElement('canvas')
+        // use simple height & width for faster raster
+        canvas.width = img.width //naturalWidth
+        canvas.height = img.height //naturalHeight
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+        return canvas
+      }
+
+      function imageDataToDataUrl(imageData) {
+        // Create a canvas element
+        const canvas = document.createElement('canvas')
+        canvas.width = imageData.width
+        canvas.height = imageData.height
+        const ctx = canvas.getContext('2d')
+
+        // Put the ImageData onto the canvas
+        ctx.putImageData(imageData, 0, 0)
+
+        // Convert the canvas to a Data URL
+        const dataURL = canvas.toDataURL('image/png') // You can specify 'image/jpeg' if preferred
+        return dataURL
+      }
+
+      function smoothify() {
+        const rootDiv = this.parentNode
+        const orgImg = rootDiv.querySelector('img')
+        const canvas = drawImgOnCanvas(orgImg)
+        const ctx = canvas.getContext('2d')
+        const imageData = ctx.getImageData(
+          0,
+          0,
+          canvas.width,
+          canvas.height
+        )
+
+        // soomthen pixel & denoising
+        // https://www.youtube.com/watch?v=7FP7ndMEfsc explaination of non-linear filter esp. bilateral filter
+        const sigmaColor = 30
+        const sigmaSpace = 5
+        const smoothedImageData = applyBilateralFilter(
+          imageData,
+          sigmaColor,
+          sigmaSpace
+        )
+        showCase(
+          rootDiv.id,
+          imageDataToDataUrl(smoothedImageData),
+          'Smooth Pixel'
+        )
+      }
+
+      // Event listener to handle file input
+      fileInput.addEventListener('change', event => {
+        const file = event.target.files[0]
+        if (!file) return
+        const reader = new FileReader()
+
+        reader.onload = function (e) {
+          const img = new Image()
+          img.onload = function () {
+            const rootDivId = createGroup(
+              `${file.name.toLowerCase()}-${new Date().getTime()}`
+            )
+            const button = document
+              .getElementById(rootDivId)
+              .querySelector('button')
+            showCase(rootDivId, img.src, 'Original Image')
+            button.addEventListener('click', smoothify)
+          }
+          img.src = e.target.result
+        }
+        reader.readAsDataURL(file)
+      })
+    </script>
+  </body>
+</html>

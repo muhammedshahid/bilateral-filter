@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Smooth Pixel</title>
+    <title>Bilateral Filter</title>
     <style>
       /* Gallery Styles */
       /* #output-container {
@@ -206,7 +206,6 @@
         )
 
         // soomthen pixel & denoising
-        // https://www.youtube.com/watch?v=7FP7ndMEfsc explaination of non-linear filter esp. bilateral filter
         const sigmaColor = 30
         const sigmaSpace = 5
         const smoothedImageData = applyBilateralFilter(
